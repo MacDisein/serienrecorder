@@ -68,6 +68,17 @@ colorWhite  = 0xffffff
 
 serienRecMainPath = "/usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/"
 
+
+# the new API for the Dreambox DM7080HD changes the behavior
+# of eTimer append - here are the changes
+try:
+	from enigma import eMediaDatabase
+except ImportError as ie:
+	isDreamboxOS = False
+else:
+	isDreamboxOS = True
+
+	
 try:
 	default_before = int(config.recording.margin_before.value)
 	default_after = int(config.recording.margin_after.value)
@@ -80,6 +91,8 @@ longButtonText = False
 buttonText_na = _("-----")
 skinName = "SerienRecorder3.0"
 skin = "%sskins/SR_Skin.xml" % serienRecMainPath
+default_skinName = skinName
+default_skin = skin
 
 def SelectSkin():
 	global showAllButtons
@@ -90,9 +103,9 @@ def SelectSkin():
 	buttonText_na = _("-----")
 	
 	global skinName
-	skinName = "SerienRecorder3.0"
+	skinName = default_skinName
 	global skin
-	skin = "%sskins/SR_Skin.xml" % serienRecMainPath
+	skin = default_skin
 	
 	if config.plugins.serienRec.SkinType.value == "Skinpart":
 		try:
@@ -122,7 +135,9 @@ def ReadConfigFile():
 	config.plugins.serienRec.savetopath = ConfigText(default = "/media/hdd/movie/", fixed_size=False, visible_width=80)
 	config.plugins.serienRec.databasePath = ConfigText(default = serienRecMainPath, fixed_size=False, visible_width=80)
 	
-	choices = [("Skinpart", _("Skinpart")), ("", _("SerienRecorder 1")), ("Skin2", _("SerienRecorder 2")), ("AtileHD", _("AtileHD"))]
+	choices = [("Skinpart", _("Skinpart")), ("", _("SerienRecorder 1")), ("Skin2", _("SerienRecorder 2"))]
+	if not isDreamboxOS:
+		choices.append(("AtileHD", _("AtileHD")))
 	t = list(os.walk("%sskins" % serienRecMainPath))
 	for x in t[0][1]:
 		if x not in ("Skin2", "AtileHD"):
@@ -216,7 +231,7 @@ def ReadConfigFile():
 	
 	# interne
 	config.plugins.serienRec.version = NoSave(ConfigText(default="030"))
-	config.plugins.serienRec.showversion = NoSave(ConfigText(default="3.0.8"))
+	config.plugins.serienRec.showversion = NoSave(ConfigText(default="3.0.9a"))
 	config.plugins.serienRec.screenmode = ConfigInteger(0, (0,2))
 	config.plugins.serienRec.screeplaner = ConfigInteger(1, (1,3))
 	config.plugins.serienRec.recordListView = ConfigInteger(0, (0,1))
@@ -268,22 +283,18 @@ else:
 # init Opera Webbrowser
 if fileExists("/usr/lib/enigma2/python/Plugins/Extensions/HbbTV/browser.pyo"):
 	from Plugins.Extensions.HbbTV.browser import Browser
-	BrowserInstalled = True
+	OperaBrowserInstalled = True
 else:
-	BrowserInstalled = False
+	OperaBrowserInstalled = False
 
+# init DMM Webbrowser
+if fileExists("/usr/lib/enigma2/python/Plugins/Extensions/Browser/Browser.pyo"):
+	from Plugins.Extensions.Browser.Browser import Browser
+	DMMBrowserInstalled = True
+else:
+	DMMBrowserInstalled = False
 	
-
-# the new API for the Dreambox DM7080HD changes the behavior
-# of eTimer append - here are the changes
-
-try:
-	from enigma import eMediaDatabase
-except ImportError as ie:
-	isDreamboxOS = False
-else:
-	isDreamboxOS = True
-
+	
 # init Wikipedia
 if fileExists("/usr/lib/enigma2/python/Plugins/Extensions/Wikipedia/plugin.pyo"):
 	from Plugins.Extensions.Wikipedia.plugin import wikiSearch
@@ -429,15 +440,16 @@ def getUrl(url):
 	return finalurl
 
 def getCover(self, serien_name, id):
-	self['cover'].hide()
-
 	serien_nameCover = "/tmp/serienrecorder/%s.png" % serien_name
-	global coverToShow
-	coverToShow = serien_nameCover
+	if self is not None: 
+		self['cover'].hide()
+		global coverToShow
+		coverToShow = serien_nameCover
+		
 	if not fileExists("/tmp/serienrecorder/"):
 		shutil.os.mkdir("/tmp/serienrecorder/")
 	if fileExists(serien_nameCover):
-		showCover(serien_nameCover, self, serien_nameCover)
+		if self is not None: showCover(serien_nameCover, self, serien_nameCover)
 	elif id:
 		url = "http://www.wunschliste.de%s/links" % id
 		getPage(url, headers={'Content-Type':'application/x-www-form-urlencoded'}).addCallback(getImdblink, self, serien_nameCover).addErrback(getCoverDataError, self)
@@ -467,31 +479,32 @@ def loadImdbCover(data, self, serien_nameCover):
 		downloadPage(imdb_url, serien_nameCover).addCallback(showCover, self, serien_nameCover, False).addErrback(getCoverDataError, self)
 	
 def showCover(data, self, serien_nameCover, force_show=True):
-	if not force_show:
-		global coverToShow
-		if coverToShow == serien_nameCover:
-			coverToShow = None
-		else:
-			return
-		
-	if fileExists(serien_nameCover):
-		self['cover'].instance.setPixmap(gPixmapPtr())
-		scale = AVSwitch().getFramebufferScale()
-		size = self['cover'].instance.size()
-		self.picload.setPara((size.width(), size.height(), scale[0], scale[1], False, 1, "#00000000"))
-		self.picLoaderResult = 1
-		if isDreamboxOS:
-			self.picLoaderResult = self.picload.startDecode(serien_nameCover, False)
-		else:
-			self.picLoaderResult = self.picload.startDecode(serien_nameCover, 0, 0, False)
+	if self is not None: 
+		if not force_show:
+			global coverToShow
+			if coverToShow == serien_nameCover:
+				coverToShow = None
+			else:
+				return
+			
+		if fileExists(serien_nameCover):
+			self['cover'].instance.setPixmap(gPixmapPtr())
+			scale = AVSwitch().getFramebufferScale()
+			size = self['cover'].instance.size()
+			self.picload.setPara((size.width(), size.height(), scale[0], scale[1], False, 1, "#00000000"))
+			self.picLoaderResult = 1
+			if isDreamboxOS:
+				self.picLoaderResult = self.picload.startDecode(serien_nameCover, False)
+			else:
+				self.picLoaderResult = self.picload.startDecode(serien_nameCover, 0, 0, False)
 
-		if self.picLoaderResult == 0:
-			ptr = self.picload.getData()
-			if ptr != None:
-				self['cover'].instance.setPixmap(ptr)
-				self['cover'].show()
-	else:
-		print("Coverfile not found: %s" % serien_nameCover)
+			if self.picLoaderResult == 0:
+				ptr = self.picload.getData()
+				if ptr != None:
+					self['cover'].instance.setPixmap(ptr)
+					self['cover'].show()
+		else:
+			print("Coverfile not found: %s" % serien_nameCover)
 
 def setSkinProperties(self, isLayoutFinshed=True):
 	global longButtonText
@@ -506,13 +519,13 @@ def setSkinProperties(self, isLayoutFinshed=True):
 			longButtonText = False
 	
 	if longButtonText:
-		self.num_bt_text = ([_("Zeige Log"), buttonText_na, _("Abbrechen")],
+		self.num_bt_text = ([_("Zeige Log"), _("Episoden-Liste"), _("Abbrechen")],
 							[_("Timer-Übersicht"), _("Konflikt-Liste"), _("YouTube (lang: Wikipedia)")],
 							[buttonText_na, _("Merkzettel"), ""],
 							[_("Neue Serienstarts"), buttonText_na, _("Hilfe")],
 							[_("Serien Beschreibung"), buttonText_na, _("globale Einstellungen")])
 	else:
-		self.num_bt_text = ([_("Zeige Log"), buttonText_na, _("Abbrechen")],
+		self.num_bt_text = ([_("Zeige Log"), _("Episoden-Liste"), _("Abbrechen")],
 							[_("Timer-Übersicht"), _("Konflikt-Liste"), _("YouTube/Wikipedia")],
 							[buttonText_na, _("Merkzettel"), ""],
 							[_("Neue Serienstarts"), buttonText_na, _("Hilfe")],
@@ -530,10 +543,27 @@ def InitSkin(self):
 	
 	self.skinName = skinName
 	if skin:
-		SRSkin = open(skin)
-		self.skin = SRSkin.read()
-		SRSkin.close()
+		try:
+			SRSkin = open(skin)
+			self.skin = SRSkin.read()
+			SRSkin.close()
+		except:
+			global showAllButtons
+			showAllButtons = False
+			global longButtonText
+			longButtonText = False
+			global buttonText_na
+			buttonText_na = _("-----")
+			
+			global skinName
+			skinName = default_skinName
+			global skin
+			skin = default_skin
 
+			SRSkin = open(skin)
+			self.skin = SRSkin.read()
+			SRSkin.close()
+		
 	self['bt_red'] = Pixmap()
 	self['bt_green'] = Pixmap()
 	self['bt_yellow'] = Pixmap()
@@ -2539,7 +2569,8 @@ class serienRecCheckForRecording():
 							# suche in aktivierten Timern
 							for timer in recordHandler.timer_list:
 								if timer and timer.service_ref:
-									if (timer.begin == int(serien_time)) and (timer.eit != eit):
+									#if (timer.begin == int(serien_time)) and (timer.eit != eit):
+									if (timer.begin == int(serien_time)) and (timer.eit == 0) and (timer.service_ref.lower() == stbRef.lower()):
 										timer.begin = start_unixtime
 										timer.end = end_unixtime
 										timer.eit = eit
@@ -2556,7 +2587,8 @@ class serienRecCheckForRecording():
 								# suche in deaktivierten Timern
 								for timer in recordHandler.processed_timers:
 									if timer and timer.service_ref:
-										if (timer.begin == int(serien_time)) and (timer.eit != eit):
+										#if (timer.begin == int(serien_time)) and (timer.eit != eit):
+										if (timer.begin == int(serien_time)) and (timer.eit == 0) and (timer.service_ref.lower() == stbRef.lower()):
 											timer.begin = start_unixtime
 											timer.end = end_unixtime
 											timer.eit = eit
@@ -2602,7 +2634,8 @@ class serienRecCheckForRecording():
 							# suche in aktivierten Timern
 							for timer in recordHandler.timer_list:
 								if timer and timer.service_ref:
-									if timer.eit == eit:
+									#if timer.eit == eit:
+									if (timer.begin == int(serien_time)) and (timer.eit == eit) and (timer.service_ref.lower() == stbRef.lower()):
 										timer.begin = start_unixtime
 										timer.end = end_unixtime
 										NavigationInstance.instance.RecordTimer.timeChanged(timer)
@@ -2618,7 +2651,8 @@ class serienRecCheckForRecording():
 								# suche in deaktivierten Timern
 								for timer in recordHandler.processed_timers:
 									if timer and timer.service_ref:
-										if timer.eit == eit:
+										#if timer.eit == eit:
+										if (timer.begin == int(serien_time)) and (timer.eit == eit) and (timer.service_ref.lower() == stbRef.lower()):
 											timer.begin = start_unixtime
 											timer.end = end_unixtime
 											NavigationInstance.instance.RecordTimer.timeChanged(timer)
@@ -2649,7 +2683,8 @@ class serienRecCheckForRecording():
 					# suche in deaktivierten Timern
 					for timer in recordHandler.processed_timers:
 						if timer and timer.service_ref:
-							if (timer.begin == serien_time) and (timer.service_ref == stbRef):
+							#if (timer.begin == serien_time) and (timer.service_ref == stbRef):
+							if (timer.begin == serien_time) and (timer.eit == eit) and (timer.service_ref.lower() == stbRef.lower()):
 								timerFound = True
 								break
 					if not timerFound:
@@ -2934,7 +2969,18 @@ class serienRecCheckForRecording():
 		cCursor.execute("VACUUM")
 		cCursor.close()
 		#dbTmp.close()
-		
+
+		if not self.manuell:
+			cCursor = dbSerRec.cursor()
+			cCursor.execute("SELECT Serie, Url FROM SerienMarker")
+			for row in cCursor:
+				(Serie, Url) = row
+				id = re.findall('epg_print.pl\?s=([0-9]+)', Url)
+				if id:
+					id = "/%s" %  id[0]
+				getCover(None, Serie, id)
+			cCursor.close()
+
 		# Statistik
 		self.speedEndTime = time.clock()
 		speedTime = (self.speedEndTime-self.speedStartTime)
@@ -3534,10 +3580,12 @@ class serienRecTimer(Screen, HelpableScreen):
 			self.session.open(serienRecPluginNotInstalledScreen, "Wikipedia von Kashmir")
 
 	def showManual(self):
-		if BrowserInstalled:
+		if OperaBrowserInstalled:
 			self.session.open(Browser, "/usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html", True)
+		elif DMMBrowserInstalled:
+			self.session.open(Browser, True, "file://usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html")
 		else:
-			self.session.open(serienRecPluginNotInstalledScreen, "Opera Webbrowser")
+			self.session.open(serienRecPluginNotInstalledScreen, "Webbrowser")
 			
 	def showAbout(self):
 		self.session.open(serienRecAboutScreen)
@@ -3838,7 +3886,7 @@ class serienRecRunAutoCheck(Screen, HelpableScreen):
 		if not showAllButtons:
 			self['bt_red'].show()
 			self['bt_exit'].show()
-			self['bt_text'].show()
+			self['bt_info'].show()
 			self['bt_menu'].show()
 		
 			self['text_red'].show()
@@ -3852,10 +3900,12 @@ class serienRecRunAutoCheck(Screen, HelpableScreen):
 		updateMenuKeys(self)
 		
 	def showManual(self):
-		if BrowserInstalled:
+		if OperaBrowserInstalled:
 			self.session.open(Browser, "/usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html", True)
+		elif DMMBrowserInstalled:
+			self.session.open(Browser, True, "file://usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html")
 		else:
-			self.session.open(serienRecPluginNotInstalledScreen, "Opera Webbrowser")
+			self.session.open(serienRecPluginNotInstalledScreen, "Webbrowser")
 			
 	def modifyAddedFile(self):
 		self.session.open(serienRecModifyAdded)
@@ -3986,6 +4036,7 @@ class serienRecMarker(Screen, HelpableScreen):
 				"1"		   : (self.modifyAddedFile, _("Liste der aufgenommenen Folgen bearbeiten")),
 				"3"		   : (self.showProposalDB, _("Liste der Serien/Staffel-Starts anzeigen")),
 				"4"		   : (self.serieInfo, _("Informationen zur ausgewählten Serie anzeigen")),
+			    "5"		   : (self.episodeList, _("Episoden der ausgewählten Serie anzeigen")),
 				"6"		   : (self.showConflicts, _("Liste der Timer-Konflikte anzeigen")),
 				"7"		   : (self.showWishlist, _("Wunschliste (vorgemerkte Folgen) anzeigen")),
 			}, -1)
@@ -4012,6 +4063,7 @@ class serienRecMarker(Screen, HelpableScreen):
 				"1"		   : (self.modifyAddedFile, _("Liste der aufgenommenen Folgen bearbeiten")),
 				"3"		   : (self.showProposalDB, _("Liste der Serien/Staffel-Starts anzeigen")),
 				"4"		   : (self.serieInfo, _("Informationen zur ausgewählten Serie anzeigen")),
+			    "5"		   : (self.episodeList, _("Episoden der ausgewählten Serie anzeigen")),
 				"6"		   : (self.showConflicts, _("Liste der Timer-Konflikte anzeigen")),
 				"7"		   : (self.showWishlist, _("Wunschliste (vorgemerkte Folgen) anzeigen")),
 			}, -1)
@@ -4153,6 +4205,18 @@ class serienRecMarker(Screen, HelpableScreen):
 		if id:
 			self.session.open(serienRecShowInfo, serien_name, "http://www.wunschliste.de/%s" % id[0])
 
+	def episodeList(self):
+		if self.modus == "config":
+			check = self['config'].getCurrent()
+			if check == None:
+				return
+
+			serien_name = self['config'].getCurrent()[0][0]
+			serien_url = self['config'].getCurrent()[0][1]
+			id = re.findall('epg_print.pl\?s=([0-9]+)', serien_url)
+			if id:
+				self.session.openWithCallback(self.callTimerAdded, serienRecEpisodes, serien_name, "http://www.wunschliste.de/%s/episoden" % id[0], self.serien_nameCover)
+
 	def showConflicts(self):
 		self.session.open(serienRecShowConflicts)
 		
@@ -4190,13 +4254,18 @@ class serienRecMarker(Screen, HelpableScreen):
 			self.session.open(serienRecPluginNotInstalledScreen, "Wikipedia von Kashmir")
 
 	def showManual(self):
-		if BrowserInstalled:
+		if OperaBrowserInstalled:
 			if self.loading:
 				return
 				
 			self.session.open(Browser, "/usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html", True)
+		elif DMMBrowserInstalled:
+			if self.loading:
+				return
+				
+			self.session.open(Browser, True, "file://usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html")
 		else:
-			self.session.open(serienRecPluginNotInstalledScreen, "Opera Webbrowser")
+			self.session.open(serienRecPluginNotInstalledScreen, "Webbrowser")
 			
 	def showAbout(self):
 		self.session.open(serienRecAboutScreen)
@@ -4926,13 +4995,18 @@ class serienRecAddSerie(Screen, HelpableScreen):
 			self.session.open(serienRecPluginNotInstalledScreen, "Wikipedia von Kashmir")
 
 	def showManual(self):
-		if BrowserInstalled:
+		if OperaBrowserInstalled:
 			if self.loading:
 				return
 				
 			self.session.open(Browser, "/usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html", True)
+		elif DMMBrowserInstalled:
+			if self.loading:
+				return
+				
+			self.session.open(Browser, True, "file://usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html")
 		else:
-			self.session.open(serienRecPluginNotInstalledScreen, "Opera Webbrowser")
+			self.session.open(serienRecPluginNotInstalledScreen, "Webbrowser")
 			
 	def showAbout(self):
 		self.session.open(serienRecAboutScreen)
@@ -5247,13 +5321,18 @@ class serienRecSendeTermine(Screen, HelpableScreen):
 			self.session.open(serienRecPluginNotInstalledScreen, "Wikipedia von Kashmir")
 
 	def showManual(self):
-		if BrowserInstalled:
+		if OperaBrowserInstalled:
 			if self.loading:
 				return
 				
 			self.session.open(Browser, "/usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html", True)
+		elif DMMBrowserInstalled:
+			if self.loading:
+				return
+				
+			self.session.open(Browser, True, "file://usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html")
 		else:
-			self.session.open(serienRecPluginNotInstalledScreen, "Opera Webbrowser")
+			self.session.open(serienRecPluginNotInstalledScreen, "Webbrowser")
 			
 	def showAbout(self):
 		self.session.open(serienRecAboutScreen)
@@ -5658,6 +5737,302 @@ class serienRecSendeTermine(Screen, HelpableScreen):
 	def dataError(self, error):
 		print error
 
+class serienRecBaseButtons():
+	def readLogFile(self):
+		self.session.open(serienRecReadLog)
+
+	def modifyAddedFile(self):
+		self.session.open(serienRecModifyAdded)
+
+	def showProposalDB(self):
+		self.session.open(serienRecShowSeasonBegins)
+
+	def serieInfo(self):
+		if self.loading:
+			return
+
+		id = re.findall('epg_print.pl\?s=([0-9]+)', self.serie_url)
+		if id:
+			self.session.open(serienRecShowInfo, self.serien_name, "http://www.wunschliste.de/%s" % id[0])
+
+	def showConflicts(self):
+		self.session.open(serienRecShowConflicts)
+
+	def showWishlist(self):
+		self.session.open(serienRecWishlist)
+
+	def youtubeSearch(self):
+		if epgTranslatorInstalled:
+			if self.loading:
+				return
+
+			print "[Serien Recorder] starte youtube suche für %s" % self.serien_name
+			self.session.open(searchYouTube, self.serien_name)
+		else:
+			self.session.open(serienRecPluginNotInstalledScreen, "EPGTranslator von Kashmir")
+
+	def WikipediaSearch(self):
+		if WikipediaInstalled:
+			if self.loading:
+				return
+
+			print "[Serien Recorder] starte Wikipedia Suche für %s" % self.serien_name
+			self.session.open(wikiSearch, self.serien_name)
+		else:
+			self.session.open(serienRecPluginNotInstalledScreen, "Wikipedia von Kashmir")
+
+	def showManual(self):
+		if OperaBrowserInstalled:
+			if self.loading:
+				return
+
+			self.session.open(Browser, "/usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html", True)
+		elif DMMBrowserInstalled:
+			if self.loading:
+				return
+
+			self.session.open(Browser, True, "file://usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html")
+		else:
+			self.session.open(serienRecPluginNotInstalledScreen, "Webbrowser")
+
+	def showAbout(self):
+		self.session.open(serienRecAboutScreen)
+
+	def recSetup(self):
+		self.session.openWithCallback(self.setupClose, serienRecSetup)
+
+	def setupClose(self, result):
+		if not result[2]:
+			self.close()
+		else:
+			if result[0]:
+				if config.plugins.serienRec.update.value:
+					serienRecCheckForRecording(self.session, False)
+				elif config.plugins.serienRec.timeUpdate.value:
+					serienRecCheckForRecording(self.session, False)
+
+			if result[1]:
+				self.searchSerie()
+
+	def keyLeft(self):
+		self['config'].pageUp()
+
+	def keyRight(self):
+		self['config'].pageDown()
+
+	def keyDown(self):
+		self['config'].down()
+
+	def keyUp(self):
+		self['config'].up()
+
+	def keyRed(self):
+		if config.plugins.serienRec.refreshViews.value:
+			self.close(self.changesMade)
+		else:
+			self.close(False)
+
+	def keyCancel(self):
+		if config.plugins.serienRec.refreshViews.value:
+			self.close(self.changesMade)
+		else:
+			self.close(False)
+
+
+class serienRecEpisodes(serienRecBaseButtons, Screen, HelpableScreen):
+	def __init__(self, session, serien_name, serie_url, serien_cover):
+		Screen.__init__(self, session)
+		HelpableScreen.__init__(self)
+		self.session = session
+		self.picload = ePicLoad()
+		self.serien_name = serien_name
+		self.serie_url = serie_url
+		self.serien_cover = serien_cover
+
+		self["actions"] = HelpableActionMap(self, "SerienRecorderActions", {
+			"ok"    : (self.keyOK, _("umschalten ausgewählter Sendetermin aktiviert/deaktiviert")),
+			"cancel": (self.keyCancel, _("zurück zur Serien-Marker-Ansicht")),
+			"left"  : (self.keyLeft, _("zur vorherigen Seite blättern")),
+			"right" : (self.keyRight, _("zur nächsten Seite blättern")),
+			"up"    : (self.keyUp, _("eine Zeile nach oben")),
+			"down"  : (self.keyDown, _("eine Zeile nach unten")),
+			"red"	: (self.keyRed, _("zurück zur Serien-Marker-Ansicht")),
+			"menu"  : (self.recSetup, _("Menü für globale Einstellungen öffnen")),
+			"startTeletext"       : (self.youtubeSearch, _("Trailer zur ausgewählten Serie auf YouTube suchen")),
+			"startTeletext_long"  : (self.WikipediaSearch, _("Informationen zur ausgewählten Serie auf Wikipedia suchen")),
+			"0"		: (self.readLogFile, _("Log-File des letzten Suchlaufs anzeigen")),
+			"1"		: (self.modifyAddedFile, _("Liste der aufgenommenen Folgen bearbeiten")),
+			"3"		: (self.showProposalDB, _("Liste der Serien/Staffel-Starts anzeigen")),
+			"4"		: (self.serieInfo, _("Informationen zur ausgewählten Serie anzeigen")),
+			"6"		: (self.showConflicts, _("Liste der Timer-Konflikte anzeigen")),
+			"7"		: (self.showWishlist, _("Wunschliste (vorgemerkte Folgen) anzeigen")),
+		}, -1)
+		self.helpList[0][2].sort()
+
+		self["helpActions"] = ActionMap(["SerienRecorderActions",], {
+			"displayHelp"      : self.showHelp,
+			"displayHelp_long" : self.showManual,
+		}, 0)
+
+		self.setupSkin()
+
+		self.sendetermine_list = []
+		self.changesMade = False
+		self.loading = True
+
+		self.onLayoutFinish.append(self.searchEpisodes)
+		self.onClose.append(self.__onClose)
+		self.onLayoutFinish.append(self.setSkinProperties)
+
+	def callHelpAction(self, *args):
+		HelpableScreen.callHelpAction(self, *args)
+
+	def setSkinProperties(self):
+		setSkinProperties(self)
+
+		self['text_red'].setText(_("Abbrechen"))
+		self['text_ok'].setText(_("Auswahl"))
+
+		self.displayTimer = None
+		if showAllButtons:
+			Skin1_Settings(self)
+		else:
+			self.displayMode = 2
+			self.updateMenuKeys()
+
+			self.displayTimer = eTimer()
+			if isDreamboxOS:
+				self.displayTimer_conn = self.displayTimer.timeout.connect(self.updateMenuKeys)
+			else:
+				self.displayTimer.callback.append(self.updateMenuKeys)
+			self.displayTimer.start(config.plugins.serienRec.DisplayRefreshRate.value * 1000)
+
+	def setupSkin(self):
+		self.skin = None
+		InitSkin(self)
+
+		self.chooseMenuList = MenuList([], enableWrapAround=True, content=eListboxPythonMultiContent)
+		self.chooseMenuList.l.setFont(0, gFont('Regular', 20 + int(config.plugins.serienRec.listFontsize.value)))
+		self.chooseMenuList.l.setItemHeight(50)
+		self['config'] = self.chooseMenuList
+		self['config'].show()
+
+		self['title'].setText(_("Lade Web-Channel / STB-Channels..."))
+
+		self['cover'].show()
+
+		if not showAllButtons:
+			self['bt_red'].show()
+			self['bt_ok'].show()
+			self['bt_exit'].show()
+			self['bt_text'].show()
+			self['bt_info'].show()
+			self['bt_menu'].show()
+
+			self['text_red'].show()
+			self['text_ok'].show()
+			self['text_0'].show()
+			self['text_1'].show()
+			self['text_2'].show()
+			self['text_3'].show()
+			self['text_4'].show()
+
+	def updateMenuKeys(self):
+		updateMenuKeys(self)
+
+	def searchEpisodes(self):
+		if not self.serien_cover == "nix":
+			showCover(self.serien_cover, self, self.serien_cover)
+		print "[SerienRecorder] Suche Episoden' %s '" % self.serien_name
+		self['title'].setText(_("Suche Episoden ' %s '") % self.serien_name)
+		print self.serie_url
+
+		getPage(self.serie_url, headers={'Content-Type':'application/x-www-form-urlencoded'}).addCallback(self.resultsEpisodes).addErrback(self.dataError)
+
+	def resultsEpisodes(self, data):
+		parsingOK = False
+		self.episodes_list = []
+
+		raw = re.findall('<div class="l(?: ts)?" id="ep_[0-9]+">.*?<span class="epg_st".*?title="Staffel">(.*?)</span>.*?(?:<span class="epg_ep" title="Episode">(.*?)</span>.*?)?<span class="epl4(.*?)".*?>.*?<a href="(.*?)">(.*?)(?:<span class="otitel">(.*?)</span>)?</a>.*?</div>', data, re.S)
+		#('1', ['2'], [' tv'], '/episode/368700/arrow-die-rueckkehr', 'Die Rückkehr ', '(Pilot)')
+
+		if raw:
+			parsingOK = True
+
+		if parsingOK:
+			for season,episode,tv,info_url,title,otitle in raw:
+				# Umlaute umwandeln
+				title = iso8859_Decode(title)
+				otitle = iso8859_Decode(otitle)
+				season = iso8859_Decode(season)
+				self.episodes_list.append([season, episode, tv, info_url, title, otitle])
+
+		self.chooseMenuList.setList(map(self.buildList_episodes, self.episodes_list))
+		self.loading = False
+		self['title'].setText(_("%s Episoden für ' %s ' gefunden.") % (str(len(self.episodes_list)), self.serien_name))
+
+	def buildList_episodes(self, entry):
+		(season, episode, tv, info_url, title, otitle) = entry
+
+		seasonEpisodeString = "S%sE%s" % (str(season).zfill(2), str(episode).zfill(2))
+		(dirname, dirname_serie) = getDirname(self.serien_name, season)
+
+		imageMinus = "%simages/minus.png" % serienRecMainPath
+		imagePlus = "%simages/plus.png" % serienRecMainPath
+		imageNone = "%simages/black.png" % serienRecMainPath
+		#imageHDD = "%simages/hdd.png" % serienRecMainPath
+		imageTV = "%simages/tv.png" % serienRecMainPath
+		#imageTimer = "%simages/timerlist.png" % serienRecMainPath
+		#imageAdded = "%simages/added.png" % serienRecMainPath
+
+		rightImage = imageNone
+
+		middleImage = imageNone
+		if tv:
+			middleImage = imageTV
+
+		leftImage = imageMinus
+		if checkAlreadyAdded(self.serien_name, season, episode) > 0:
+			leftImage = imagePlus
+
+		if not title:
+			title = "-"
+		if not otitle:
+			otitle = ("(%s)" % title)
+
+		color = colorYellow
+		if not season.isdigit():
+			color = colorRed
+
+		return [entry,
+			(eListboxPythonMultiContent.TYPE_PIXMAP_ALPHATEST, 5, 15, 16, 16, loadPNG(leftImage)),
+			(eListboxPythonMultiContent.TYPE_TEXT, 40, 3, 100, 48, 0, RT_HALIGN_LEFT | RT_VALIGN_CENTER, "%s" % (seasonEpisodeString), color),
+			(eListboxPythonMultiContent.TYPE_PIXMAP_ALPHATEST, 150, 17, 48, 48, loadPNG(middleImage)),
+			(eListboxPythonMultiContent.TYPE_TEXT, 200, 3, 550, 26, 0, RT_HALIGN_LEFT | RT_VALIGN_CENTER, title),
+			(eListboxPythonMultiContent.TYPE_TEXT, 200, 29, 550, 18, 0, RT_HALIGN_LEFT | RT_VALIGN_CENTER, otitle.strip(), colorYellow),
+			(eListboxPythonMultiContent.TYPE_PIXMAP_ALPHATEST, 750, 1, 48, 48, loadPNG(rightImage))
+			]
+
+	def keyOK(self):
+		if self.loading:
+			return
+
+		check = self['config'].getCurrent()
+		if check == None:
+			return
+
+		sindex = self['config'].getSelectedIndex()
+		if len(self.episodes_list) != 0:
+			if self.episodes_list[sindex][3]:
+				self.session.open(serienRecShowEpisodeInfo, self.serien_name, self.episodes_list[sindex][4], "http://www.wunschliste.de/%s" % self.episodes_list[sindex][3])
+
+	def __onClose(self):
+		if self.displayTimer:
+			self.displayTimer.stop()
+			self.displayTimer = None
+
+	def dataError(self, error):
+		print error
 
 #---------------------------------- Channel Functions ------------------------------------------
 
@@ -5846,10 +6221,12 @@ class serienRecMainChannelEdit(Screen, HelpableScreen):
 			self.session.open(serienRecPluginNotInstalledScreen, "Wikipedia von Kashmir")
 
 	def showManual(self):
-		if BrowserInstalled:
+		if OperaBrowserInstalled:
 			self.session.open(Browser, "/usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html", True)
+		elif DMMBrowserInstalled:
+			self.session.open(Browser, True, "file://usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html")
 		else:
-			self.session.open(serienRecPluginNotInstalledScreen, "Opera Webbrowser")
+			self.session.open(serienRecPluginNotInstalledScreen, "Webbrowser")
 			
 	def showAbout(self):
 		self.session.open(serienRecAboutScreen)
@@ -6311,10 +6688,12 @@ class serienRecSetup(Screen, ConfigListScreen, HelpableScreen):
 								[buttonText_na, buttonText_na, buttonText_na])
 
 	def showManual(self):
-		if BrowserInstalled:
+		if OperaBrowserInstalled:
 			self.session.open(Browser, "/usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html", True)
+		elif DMMBrowserInstalled:
+			self.session.open(Browser, True, "file://usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html")
 		else:
-			self.session.open(serienRecPluginNotInstalledScreen, "Opera Webbrowser")
+			self.session.open(serienRecPluginNotInstalledScreen, "Webbrowser")
 			
 	def showAbout(self):
 		self.session.open(serienRecAboutScreen)
@@ -6424,6 +6803,14 @@ class serienRecSetup(Screen, ConfigListScreen, HelpableScreen):
 	def keyDown(self):
 		if self['config'].getCurrent()[1] == config.plugins.serienRec.updateInterval:
 			self.changedEntry()
+		elif self['config'].getCurrent()[1] == config.plugins.serienRec.checkfordays:
+			x = int(config.plugins.serienRec.TimeSpanForRegularTimer.value)
+			config.plugins.serienRec.TimeSpanForRegularTimer = ConfigInteger(7, (int(config.plugins.serienRec.checkfordays.value),999))
+			if int(config.plugins.serienRec.checkfordays.value) > x:
+				config.plugins.serienRec.TimeSpanForRegularTimer.value = int(config.plugins.serienRec.checkfordays.value)
+			else:
+				config.plugins.serienRec.TimeSpanForRegularTimer.value = x
+			self.changedEntry()
 			
 		if self['config'].instance.getCurrentIndex() >= (len(self.list) - 1):
 			self['config'].instance.moveSelectionTo(0)
@@ -6446,6 +6833,14 @@ class serienRecSetup(Screen, ConfigListScreen, HelpableScreen):
 	def keyUp(self):
 		if self['config'].getCurrent()[1] == config.plugins.serienRec.updateInterval:
 			self.changedEntry()
+		elif self['config'].getCurrent()[1] == config.plugins.serienRec.checkfordays:
+			x = int(config.plugins.serienRec.TimeSpanForRegularTimer.value)
+			config.plugins.serienRec.TimeSpanForRegularTimer = ConfigInteger(7, (int(config.plugins.serienRec.checkfordays.value),999))
+			if int(config.plugins.serienRec.checkfordays.value) > x:
+				config.plugins.serienRec.TimeSpanForRegularTimer.value = int(config.plugins.serienRec.checkfordays.value)
+			else:
+				config.plugins.serienRec.TimeSpanForRegularTimer.value = x
+			self.changedEntry()
 			
 		if self['config'].instance.getCurrentIndex() <= 1:
 			self['config'].instance.moveSelectionTo(len(self.list) - 1)
@@ -6467,11 +6862,47 @@ class serienRecSetup(Screen, ConfigListScreen, HelpableScreen):
 
 	def keyLeft(self):
 		ConfigListScreen.keyLeft(self)
-		self.changedEntry()
+		if self['config'].getCurrent()[1] not in (config.plugins.serienRec.seasonsubdirnumerlength,
+		                                          config.plugins.serienRec.BackupPath,
+												  config.plugins.serienRec.updateInterval,
+												  config.plugins.serienRec.deltime,
+												  config.plugins.serienRec.maxWebRequests,
+												  config.plugins.serienRec.checkfordays,
+												  config.plugins.serienRec.globalFromTime,
+												  config.plugins.serienRec.globalToTime,
+												  config.plugins.serienRec.TimeSpanForRegularTimer,
+												  config.plugins.serienRec.margin_before,
+												  config.plugins.serienRec.margin_after,
+												  config.plugins.serienRec.max_season,
+												  config.plugins.serienRec.DSBTimeout,
+												  config.plugins.serienRec.LogFilePath,
+												  config.plugins.serienRec.deleteLogFilesOlderThan,
+												  config.plugins.serienRec.deleteOlderThan,
+												  config.plugins.serienRec.NoOfRecords,
+												  config.plugins.serienRec.tuner):
+			self.changedEntry()
 
 	def keyRight(self):
 		ConfigListScreen.keyRight(self)
-		self.changedEntry()
+		if self['config'].getCurrent()[1] not in (config.plugins.serienRec.seasonsubdirnumerlength,
+		                                          config.plugins.serienRec.BackupPath,
+												  config.plugins.serienRec.updateInterval,
+												  config.plugins.serienRec.deltime,
+												  config.plugins.serienRec.maxWebRequests,
+												  config.plugins.serienRec.checkfordays,
+												  config.plugins.serienRec.globalFromTime,
+												  config.plugins.serienRec.globalToTime,
+												  config.plugins.serienRec.TimeSpanForRegularTimer,
+												  config.plugins.serienRec.margin_before,
+												  config.plugins.serienRec.margin_after,
+												  config.plugins.serienRec.max_season,
+												  config.plugins.serienRec.DSBTimeout,
+												  config.plugins.serienRec.LogFilePath,
+												  config.plugins.serienRec.deleteLogFilesOlderThan,
+												  config.plugins.serienRec.deleteOlderThan,
+												  config.plugins.serienRec.NoOfRecords,
+												  config.plugins.serienRec.tuner):
+			self.changedEntry()
 
 	def createConfigList(self):
 		self.list = []
@@ -7069,10 +7500,12 @@ class serienRecMarkerSetup(Screen, ConfigListScreen, HelpableScreen):
 								[buttonText_na, buttonText_na, buttonText_na])
 
 	def showManual(self):
-		if BrowserInstalled:
+		if OperaBrowserInstalled:
 			self.session.open(Browser, "/usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html", True)
+		elif DMMBrowserInstalled:
+			self.session.open(Browser, True, "file://usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html")
 		else:
-			self.session.open(serienRecPluginNotInstalledScreen, "Opera Webbrowser")
+			self.session.open(serienRecPluginNotInstalledScreen, "Webbrowser")
 			
 	def showAbout(self):
 		self.session.open(serienRecAboutScreen)
@@ -7401,10 +7834,12 @@ class serienRecChannelSetup(Screen, ConfigListScreen, HelpableScreen):
 								[buttonText_na, buttonText_na, buttonText_na])
 
 	def showManual(self):
-		if BrowserInstalled:
+		if OperaBrowserInstalled:
 			self.session.open(Browser, "/usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html", True)
+		elif DMMBrowserInstalled:
+			self.session.open(Browser, True, "file://usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html")
 		else:
-			self.session.open(serienRecPluginNotInstalledScreen, "Opera Webbrowser")
+			self.session.open(serienRecPluginNotInstalledScreen, "Webbrowser")
 			
 	def showAbout(self):
 		self.session.open(serienRecAboutScreen)
@@ -7605,10 +8040,12 @@ class SerienRecFileList(Screen, HelpableScreen):
 								[buttonText_na, buttonText_na, buttonText_na])
 
 	def showManual(self):
-		if BrowserInstalled:
+		if OperaBrowserInstalled:
 			self.session.open(Browser, "/usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html", True)
+		elif DMMBrowserInstalled:
+			self.session.open(Browser, True, "file://usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html")
 		else:
-			self.session.open(serienRecPluginNotInstalledScreen, "Opera Webbrowser")
+			self.session.open(serienRecPluginNotInstalledScreen, "Webbrowser")
 			
 	def showAbout(self):
 		self.session.open(serienRecAboutScreen)
@@ -7751,7 +8188,7 @@ class serienRecReadLog(Screen, HelpableScreen):
 		if not showAllButtons:
 			self['bt_red'].show()
 			self['bt_exit'].show()
-			self['bt_text'].show()
+			self['bt_info'].show()
 			self['bt_menu'].show()
 			
 			self['text_red'].show()
@@ -7777,10 +8214,12 @@ class serienRecReadLog(Screen, HelpableScreen):
 		self.session.open(serienRecWishlist)
 
 	def showManual(self):
-		if BrowserInstalled:
+		if OperaBrowserInstalled:
 			self.session.open(Browser, "/usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html", True)
+		elif DMMBrowserInstalled:
+			self.session.open(Browser, True, "file://usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html")
 		else:
-			self.session.open(serienRecPluginNotInstalledScreen, "Opera Webbrowser")
+			self.session.open(serienRecPluginNotInstalledScreen, "Webbrowser")
 			
 	def showAbout(self):
 		self.session.open(serienRecAboutScreen)
@@ -7926,7 +8365,7 @@ class serienRecShowConflicts(Screen, HelpableScreen):
 			self['bt_red'].show()
 			self['bt_blue'].show()
 			self['bt_exit'].show()
-			self['bt_text'].show()
+			self['bt_info'].show()
 			self['bt_menu'].show()
 			
 			self['text_red'].show()
@@ -7953,10 +8392,12 @@ class serienRecShowConflicts(Screen, HelpableScreen):
 		self.session.open(serienRecWishlist)
 
 	def showManual(self):
-		if BrowserInstalled:
+		if OperaBrowserInstalled:
 			self.session.open(Browser, "/usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html", True)
+		elif DMMBrowserInstalled:
+			self.session.open(Browser, True, "file://usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html")
 		else:
-			self.session.open(serienRecPluginNotInstalledScreen, "Opera Webbrowser")
+			self.session.open(serienRecPluginNotInstalledScreen, "Webbrowser")
 			
 	def showAbout(self):
 		self.session.open(serienRecAboutScreen)
@@ -8230,10 +8671,12 @@ class serienRecModifyAdded(Screen, HelpableScreen):
 			self.session.open(serienRecPluginNotInstalledScreen, "Wikipedia von Kashmir")
 
 	def showManual(self):
-		if BrowserInstalled:
+		if OperaBrowserInstalled:
 			self.session.open(Browser, "/usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html", True)
+		elif DMMBrowserInstalled:
+			self.session.open(Browser, True, "file://usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html")
 		else:
-			self.session.open(serienRecPluginNotInstalledScreen, "Opera Webbrowser")
+			self.session.open(serienRecPluginNotInstalledScreen, "Webbrowser")
 			
 	def showAbout(self):
 		self.session.open(serienRecAboutScreen)
@@ -8648,10 +9091,12 @@ class serienRecShowSeasonBegins(Screen, HelpableScreen):
 			self.session.open(serienRecPluginNotInstalledScreen, "Wikipedia von Kashmir")
 
 	def showManual(self):
-		if BrowserInstalled:
+		if OperaBrowserInstalled:
 			self.session.open(Browser, "/usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html", True)
+		elif DMMBrowserInstalled:
+			self.session.open(Browser, True, "file://usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html")
 		else:
-			self.session.open(serienRecPluginNotInstalledScreen, "Opera Webbrowser")
+			self.session.open(serienRecPluginNotInstalledScreen, "Webbrowser")
 			
 	def showAbout(self):
 		self.session.open(serienRecAboutScreen)
@@ -9031,10 +9476,12 @@ class serienRecWishlist(Screen, HelpableScreen):
 			self.session.open(serienRecPluginNotInstalledScreen, "Wikipedia von Kashmir")
 
 	def showManual(self):
-		if BrowserInstalled:
+		if OperaBrowserInstalled:
 			self.session.open(Browser, "/usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html", True)
+		elif DMMBrowserInstalled:
+			self.session.open(Browser, True, "file://usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html")
 		else:
-			self.session.open(serienRecPluginNotInstalledScreen, "Opera Webbrowser")
+			self.session.open(serienRecPluginNotInstalledScreen, "Webbrowser")
 			
 	def showAbout(self):
 		self.session.open(serienRecAboutScreen)
@@ -9385,10 +9832,12 @@ class serienRecShowInfo(Screen, HelpableScreen):
 			self.session.open(serienRecPluginNotInstalledScreen, "Wikipedia von Kashmir")
 
 	def showManual(self):
-		if BrowserInstalled:
+		if OperaBrowserInstalled:
 			self.session.open(Browser, "/usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html", True)
+		elif DMMBrowserInstalled:
+			self.session.open(Browser, True, "file://usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html")
 		else:
-			self.session.open(serienRecPluginNotInstalledScreen, "Opera Webbrowser")
+			self.session.open(serienRecPluginNotInstalledScreen, "Webbrowser")
 			
 	def showAbout(self):
 		self.session.open(serienRecAboutScreen)
@@ -9415,23 +9864,45 @@ class serienRecShowInfo(Screen, HelpableScreen):
 		showCover(serien_nameCover, self, serien_nameCover)
 
 	def parseData(self, data):
-		info = re.findall('<p class="mb4 credits">(.*?)<div class="newsliste mb4">', data, re.S)
+		infoText = ""
+		# Get fancount
+		fancount = re.findall('<span id="fancount">(.*?)</span>', data, re.S)
+		if fancount:
+			fancount = fancount[0]
+			infoText += ("Die Serie hat %s Fans" % fancount)
+
+		# Get rating
+		rating = re.findall('<span property="v:average">(.*?)</span>', data, re.S)
+		if rating:
+			rating = rating[0]
+			infoText += (" und eine Bewertung von %s / 5.0 Sternen" % rating)
+
+		infoText += "\n\n";
+		# Get description and episode info
+		#info = re.findall('(?:<p class="nt">.*?<p>(.*?))?<p class="mb4 credits">(.*?)<div class="newsliste mb4">', data, re.S)
+		info = re.findall('<p><a href=".*?">(.*?)</a>(.*?)<br>.*?<p class="mb4 credits">(.*?)<div class="newsliste mb4">', data, re.S)
 		if info:
-			info = info[0]
-			raw = re.findall('<li><a href=".*?">(.*?)</li>', info)
+			# Get episode info
+			infoText += "%s%s\n\n" % (info[0][0], info[0][1])
+
+			# Get description
+			seriesInfo = info[0][2]
+			raw = re.findall('<li><a href=".*?">(.*?)</li>', seriesInfo)
 			for text in raw:
 				raw2 = re.findall('(.*?)</a><span>(.*?)</span>', text, re.S)
 				if raw2:
-					info = info.replace(text, '%s..%s' % (str(re.sub('<.*?>', '', raw2[0][0])).ljust(40-len(raw2[0][0])/3, '.'), str(re.sub('<.*?>', '', raw2[0][1])).rjust(40-len(raw2[0][1])/3, '.')))
+					seriesInfo = seriesInfo.replace(text, '%s..%s' % (str(re.sub('<.*?>', '', raw2[0][0])).ljust(40-len(raw2[0][0])/3, '.'), str(re.sub('<.*?>', '', raw2[0][1])).rjust(40-len(raw2[0][1])/3, '.')))
 
-			info = info.replace('</div>', '').replace('<br>', '\n')
-			beschreibung = re.sub('<!--(.*\n)*(.*)-->', '', info, re.S)
+			seriesInfo = seriesInfo.replace('</div>', '').replace('<br>', '\n')
+			beschreibung = re.sub('<!--(.*\n)*(.*)-->', '', seriesInfo, re.S)
 			beschreibung = re.sub('<.*?>', '', beschreibung)
 			beschreibung = re.sub('\n{3,}', '\n\n', beschreibung)
 			beschreibung = unicode(beschreibung, 'ISO-8859-1')
 			beschreibung = beschreibung.encode('utf-8')
 			beschreibung = beschreibung.replace('&amp;','&').replace('&apos;',"'").replace('&gt;','>').replace('&lt;','<').replace('&quot;','"')
-			self['info'].setText(str(beschreibung).replace('Cast & Crew\n','Cast & Crew:\n'))
+			infoText += (str(beschreibung).replace('Cast & Crew\n','Cast & Crew:\n'))
+
+		self['info'].setText(infoText)
 
 	def dataError(self, error):
 		print error
@@ -9447,6 +9918,198 @@ class serienRecShowInfo(Screen, HelpableScreen):
 			self.displayTimer.stop()
 			self.displayTimer = None
 			
+	def keyCancel(self):
+		self.close()
+
+class serienRecShowEpisodeInfo(Screen, HelpableScreen):
+	def __init__(self, session, serieName, episodeTitle, serieUrl):
+		Screen.__init__(self, session)
+		HelpableScreen.__init__(self)
+		self.session = session
+		self.picload = ePicLoad()
+		self.serieName = serieName
+		self.serieUrl = serieUrl
+		self.episodeTitle = episodeTitle
+
+		self["actions"] = HelpableActionMap(self, "SerienRecorderActions", {
+			"cancel": (self.keyCancel, _("zurück zur vorherigen Ansicht")),
+			"left"  : (self.pageUp, _("zur vorherigen Seite blättern")),
+			"right" : (self.pageDown, _("zur nächsten Seite blättern")),
+			"up"    : (self.pageUp, _("zur vorherigen Seite blättern")),
+			"down"  : (self.pageDown, _("zur nächsten Seite blättern")),
+			"menu"  : (self.recSetup, _("Menü für globale Einstellungen öffnen")),
+			"startTeletext"       : (self.youtubeSearch, _("Trailer zur ausgewählten Serie auf YouTube suchen")),
+			"startTeletext_long"  : (self.WikipediaSearch, _("Informationen zur ausgewählten Serie auf Wikipedia suchen")),
+			"0"		: (self.readLogFile, _("Log-File des letzten Suchlaufs anzeigen")),
+			"1"		: (self.modifyAddedFile, _("Liste der aufgenommenen Folgen bearbeiten")),
+			"3"		: (self.showProposalDB, _("Liste der Serien/Staffel-Starts anzeigen")),
+			"6"		: (self.showConflicts, _("Liste der Timer-Konflikte anzeigen")),
+			"7"		: (self.showWishlist, _("Wunschliste (vorgemerkte Folgen) anzeigen")),
+		}, -1)
+		self.helpList[0][2].sort()
+
+		self["helpActions"] = ActionMap(["SerienRecorderActions",], {
+			"displayHelp"      : self.showHelp,
+			"displayHelp_long" : self.showManual,
+		}, 0)
+
+		self.setupSkin()
+
+		self.onLayoutFinish.append(self.getData)
+		self.onClose.append(self.__onClose)
+		self.onLayoutFinish.append(self.setSkinProperties)
+
+	def callHelpAction(self, *args):
+		HelpableScreen.callHelpAction(self, *args)
+
+	def setSkinProperties(self):
+		setSkinProperties(self)
+
+		self['text_red'].setText(_("Zurück"))
+		self.num_bt_text[4][0] = buttonText_na
+
+		self.displayTimer = None
+		if showAllButtons:
+			Skin1_Settings(self)
+		else:
+			self.displayMode = 2
+			self.updateMenuKeys()
+
+			self.displayTimer = eTimer()
+			if isDreamboxOS:
+				self.displayTimer_conn = self.displayTimer.timeout.connect(self.updateMenuKeys)
+			else:
+				self.displayTimer.callback.append(self.updateMenuKeys)
+			self.displayTimer.start(config.plugins.serienRec.DisplayRefreshRate.value * 1000)
+
+	def setupSkin(self):
+		self.skin = None
+		InitSkin(self)
+
+		self['info'].show()
+
+		self['title'].setText(_("Episoden Beschreibung: %s") % self.episodeTitle)
+
+		self['cover'].show()
+
+		if not showAllButtons:
+			self['bt_red'].show()
+			self['bt_exit'].show()
+			self['bt_text'].show()
+			self['bt_info'].show()
+			self['bt_menu'].show()
+
+			self['text_red'].show()
+			self['text_0'].show()
+			self['text_1'].show()
+			self['text_2'].show()
+			self['text_3'].show()
+			self['text_4'].show()
+
+	def updateMenuKeys(self):
+		updateMenuKeys(self)
+
+	def readLogFile(self):
+		self.session.open(serienRecReadLog)
+
+	def modifyAddedFile(self):
+		self.session.open(serienRecModifyAdded)
+
+	def showProposalDB(self):
+		self.session.open(serienRecShowSeasonBegins)
+
+	def showConflicts(self):
+		self.session.open(serienRecShowConflicts)
+
+	def showWishlist(self):
+		self.session.open(serienRecWishlist)
+
+	def youtubeSearch(self):
+		if epgTranslatorInstalled:
+			print "[Serien Recorder] starte youtube suche für %s" % self.serieName
+			self.session.open(searchYouTube, self.serieName)
+		else:
+			self.session.open(serienRecPluginNotInstalledScreen, "EPGTranslator von Kashmir")
+
+	def WikipediaSearch(self):
+		if WikipediaInstalled:
+			print "[Serien Recorder] starte Wikipedia Suche für %s" % self.serieName
+			self.session.open(wikiSearch, self.serieName)
+		else:
+			self.session.open(serienRecPluginNotInstalledScreen, "Wikipedia von Kashmir")
+
+	def showManual(self):
+		if OperaBrowserInstalled:
+			self.session.open(Browser, "/usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html", True)
+		elif DMMBrowserInstalled:
+			self.session.open(Browser, True, "file://usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html")
+		else:
+			self.session.open(serienRecPluginNotInstalledScreen, "Webbrowser")
+
+	def showAbout(self):
+		self.session.open(serienRecAboutScreen)
+
+	def recSetup(self):
+		self.session.openWithCallback(self.setupClose, serienRecSetup)
+
+	def setupClose(self, result):
+		if not result[2]:
+			self.close()
+		else:
+			if result[0]:
+				if config.plugins.serienRec.update.value:
+					serienRecCheckForRecording(self.session, False)
+				elif config.plugins.serienRec.timeUpdate.value:
+					serienRecCheckForRecording(self.session, False)
+
+			if result[1]:
+				self.getData()
+
+	def getData(self):
+		getPage(self.serieUrl, headers={'Content-Type':'application/x-www-form-urlencoded'}).addCallback(self.parseData).addErrback(self.dataError)
+		serien_nameCover = "/tmp/serienrecorder/%s.png" % self.serieName
+		showCover(serien_nameCover, self, serien_nameCover)
+
+	def parseData(self, data):
+		infoText = ""
+		info = re.findall('<div class="text">.(?:<div>(.*?)</div>)?(?:<div>(.*?)</div>)?.*?<span class="wertung">(.*?)(?:</span>|<span class="small">).*?<p class="clear mb4"></p>.(?:<div class="epg_bild">.*?</div></div>)?(.*?)(?:<p class="small credits">(.*?)</p>(.*?))?<div class="clear"></div>', data, re.S)
+		if info:
+			for transmission,otransmission,ranking,description,credit,cast in info:
+				if transmission:
+					infoText += "%s\n" % re.sub('<em>|</em>', '', transmission)
+				if otransmission:
+					infoText += "%s\n" % re.sub('<em>|</em>', '', otransmission)
+				infoText += "\n"
+				if ranking:
+					infoText += (_("Episoden-Bewertung: %s") % ranking)
+				infoText += "\n"
+				if description:
+					infoText += description
+				infoText += "\n"
+				if credit:
+					infoText += credit
+				infoText += "\n"
+				if cast:
+					cast = re.sub('<p>|</p>', '', cast)
+					cast = re.sub('<(?:a|span).*?>.*?</(?:a|span)>', '', cast)
+					infoText += cast
+
+		self['info'].setText(iso8859_Decode(infoText))
+
+	def dataError(self, error):
+		print error
+
+	def pageUp(self):
+		self['info'].pageUp()
+
+	def pageDown(self):
+		self['info'].pageDown()
+
+	def __onClose(self):
+		if self.displayTimer:
+			self.displayTimer.stop()
+			self.displayTimer = None
+
 	def keyCancel(self):
 		self.close()
 
@@ -9562,10 +10225,12 @@ class serienRecShowImdbVideos(Screen, HelpableScreen):
 		self.session.open(serienRecWishlist)
 
 	def showManual(self):
-		if BrowserInstalled:
+		if OperaBrowserInstalled:
 			self.session.open(Browser, "/usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html", True)
+		elif DMMBrowserInstalled:
+			self.session.open(Browser, True, "file://usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html")
 		else:
-			self.session.open(serienRecPluginNotInstalledScreen, "Opera Webbrowser")
+			self.session.open(serienRecPluginNotInstalledScreen, "Webbrowser")
 			
 	def showAbout(self):
 		self.session.open(serienRecAboutScreen)
@@ -9946,13 +10611,18 @@ class serienRecMain(Screen, HelpableScreen):
 			self.session.open(serienRecPluginNotInstalledScreen, "Wikipedia von Kashmir")
 
 	def showManual(self):
-		if BrowserInstalled:
+		if OperaBrowserInstalled:
 			if self.loading:
 				return
 				
 			self.session.open(Browser, "/usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html", False)
+		elif DMMBrowserInstalled:
+			if self.loading:
+				return
+				
+			self.session.open(Browser, True, "file:///usr/lib/enigma2/python/Plugins/Extensions/serienrecorder/Help/SerienRecorder.html")
 		else:
-			self.session.open(serienRecPluginNotInstalledScreen, "Opera Webbrowser")
+			self.session.open(serienRecPluginNotInstalledScreen, "Webbrowser")
 			
 	def showAbout(self):
 		self.session.open(serienRecAboutScreen)
